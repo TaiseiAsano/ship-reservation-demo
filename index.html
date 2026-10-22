@@ -252,6 +252,8 @@ svg.i { width: 24px; height: 24px; fill: currentColor; flex: none; }
 .srow .hint { font-size: 12px; color: var(--muted); }
 .srow.err input::placeholder { color: var(--danger); }
 .srow.err > svg { color: var(--danger); }
+.chk { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; }
+.chk input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); flex: none; }
 .hr { height: 1px; background: var(--line); margin-left: 72px; }
 .timepick { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 16px; }
 .timepick select { border: 0; background: var(--surface2); border-radius: 6px; padding: 6px 8px; font-size: 16px; }
@@ -514,9 +516,7 @@ const rangeFree = (d, s, e) => !allOn(d).some(x => toMin(x.start) < e && s < toM
 const nextBusy = (d, after) => Math.min(closeMin(), ...allOn(d).map(x => toMin(x.start)).filter(s => s >= after));
 const prevBusy = (d, before) => Math.max(openMin(), ...allOn(d).map(x => toMin(x.end)).filter(e => e <= before));
 const colorOf = x => x.status === 'blocked' ? 'var(--ev-blocked)' : x.status === 'busy' ? 'var(--ev-busy)' : x.mine ? 'var(--ev-mine)' : 'var(--ev-approved)';
-// ほかの人の予約を「予約あり」とだけ見せる設定か（スタッフは常に詳細が見える）
-const hidesOthers = () => C() && C().publicDetail !== 'full' && !state.me?.isAdmin;
-const helpText = br => (hidesOthers() ? '緑色は自分の予約、紫は「予約あり」（ほかの方の予約）、' : '緑色は自分の予約、') + '枠線だけの予定は承認待ちです。' + (br ? '<br>' : '')
+const helpText = br => '緑色は自分の予約、紫の「予約あり」は内容を伏せた予約、枠線だけの予定は承認待ちです。' + (br ? '<br>' : '')
   + `空いている時間をタップすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。`;
 const notBookableMsg = d => isClosedDay(d) ? '定休日です'
   : d < firstBookable() ? `予約は${C().minLeadDays === 1 ? '翌日' : C().minLeadDays + '日後'}以降の日付からできます`
@@ -922,7 +922,9 @@ function openEditor(submitIntent) {
     <div class="srow" id="r-purpose">${icon('notes')}<div class="body"><input id="f-purpose" maxlength="60" placeholder="利用目的を追加"></div></div>
     <div class="srow" id="r-people">${icon('people')}<div class="body"><input id="f-people" type="number" inputmode="numeric" min="1" max="200" placeholder="人数を追加"></div></div>
     <div class="hr"></div>
-    <div class="srow">${icon('eye')}<div class="body">${C().publicDetail === 'full' ? '<span>団体名と利用目的はカレンダーで公開されます</span><span class="hint">友だち登録している人なら誰でも見られます</span>' : '<span>ほかの人には「予約あり」とだけ表示されます</span><span class="hint">団体名や利用目的が見えるのは、あなたとスタッフだけです</span>'}</div></div>
+    <div class="srow">${icon('eye')}<div class="body">
+      <label class="chk" for="f-private"><input type="checkbox" id="f-private"><span>ほかの人には「予約あり」とだけ表示する</span></label>
+      <span class="hint" id="priv-hint">チェックしない場合は、団体名と利用目的がカレンダーに表示されます（出店やイベントの告知にも使えます）</span></div></div>
     <div class="hr"></div>
     <div class="srow">${icon('phone')}<div class="body"><input id="f-contact" maxlength="60" placeholder="連絡先（電話番号またはメール）" autocomplete="tel"></div></div>
     <div class="srow">${icon('lock')}<div class="body"><textarea id="f-note" maxlength="300" placeholder="備考（プロジェクター使用、飲食の持ち込みなど）"></textarea><span class="hint">連絡先と備考はスタッフだけが見られます</span></div></div>
@@ -946,6 +948,11 @@ function openEditor(submitIntent) {
     if (!rangeFree(dr.date, dr.s, e2)) { snack('間にほかの予約があります。終了時刻を早めてください'); $('f-end').value = dr.e; return; }
     dr.e = e2; updateSheetTime();
   };
+  $('f-private').onchange = () => {
+    $('priv-hint').textContent = $('f-private').checked
+      ? 'ほかの人には「予約あり」とだけ表示されます。団体名や利用目的が見えるのは、あなたとスタッフだけです'
+      : 'チェックしない場合は、団体名と利用目的がカレンダーに表示されます（出店やイベントの告知にも使えます）';
+  };
   $('form').onsubmit = submitForm;
   if (submitIntent && $('f-org').value) setTimeout(() => $('f-purpose').focus(), 60);
   else setTimeout(() => $('f-org').focus(), 60);
@@ -964,6 +971,7 @@ async function submitForm(e) {
   const v = {
     orgName: $('f-org').value.trim(), purpose: $('f-purpose').value.trim(),
     people: $('f-people').value, contact: $('f-contact').value.trim(), note: $('f-note').value.trim(),
+    private: $('f-private').checked,
   };
   document.querySelectorAll('.srow.err').forEach(r => r.classList.remove('err'));
   if (!v.orgName) { snack('団体名を入力してください'); return $('f-org').focus(); }
@@ -1012,6 +1020,7 @@ function openDetail(id, date) {
       <div class="dsub num">${dateLabel(x.date)} ・ ${x.start}～${x.end}</div>
       <span class="stchip ${x.status}">${STATUS[x.status]}${x.mine ? '・自分の予約' : ''}</span></div></div>
     ${x.purpose ? `<div class="srow">${icon('notes')}<div class="body">${esc(x.purpose)}</div></div>` : ''}
+    ${(x.mine || isAdmin) && x.status !== 'blocked' && x.status !== 'busy' ? `<div class="srow">${icon('eye')}<div class="body">${x.private ? 'ほかの人には「予約あり」とだけ表示中' : '団体名・利用目的をカレンダーに公開中'}</div></div>` : ''}
     ${x.people ? `<div class="srow">${icon('people')}<div class="body">${esc(x.people)}名</div></div>` : ''}
     ${x.contact && (isAdmin || x.mine) ? `<div class="srow">${icon('phone')}<div class="body">${esc(x.contact)}</div></div>` : ''}
     ${x.lineName && isAdmin ? `<div class="srow">${icon('person')}<div class="body">LINE名：${esc(x.lineName)}</div></div>` : ''}
@@ -1213,12 +1222,12 @@ const demo = (() => {
     R(6, '11:00', '13:00', 'pending', 'TRYDENT', '採用面談', { userId: ME, people: '3' }),
     R(8, '18:00', '20:00', 'approved', '学生団体 Sail', '定例ミーティング', { people: '15' }),
     R(10, '10:00', '13:00', 'approved', 'ロボット研究会', '設計レビュー', { people: '9' }),
-    R(12, '17:00', '19:30', 'pending', '留学生会', 'ランゲージエクスチェンジ', { people: '20', contact: 'intl@example.jp', lineName: '留学生会 運営' }),
+    R(12, '17:00', '19:30', 'pending', '留学生会', 'ランゲージエクスチェンジ', { people: '20', contact: 'intl@example.jp', lineName: '留学生会 運営', private: true }),
     R(15, '13:00', '18:00', 'approved', 'キャリア支援室', '企業説明会', { people: '40' }),
     R(19, '19:00', '23:00', 'approved', '写真サークル Lens', '卒業制作 打ち上げ', { people: '18' }),
   ];
-  const config = { open: '10:00', close: '24:00', slotMin: 30, maxSlots: 16, minLeadDays: 1, maxAheadDays: 60, closedWeekdays: [], publicDetail: 'busy' };
-  const pub = r => ({ id: r.id, date: r.date, start: r.start, end: r.end, status: r.status, orgName: r.orgName, purpose: r.purpose, mine: r.userId === ME });
+  const config = { open: '10:00', close: '24:00', slotMin: 30, maxSlots: 16, minLeadDays: 1, maxAheadDays: 60, closedWeekdays: [] };
+  const pub = r => ({ id: r.id, date: r.date, start: r.start, end: r.end, status: r.status, orgName: r.orgName, purpose: r.purpose, mine: r.userId === ME, private: !!r.private });
   const active = r => ['pending', 'approved', 'blocked'].includes(r.status);
   const find = id => { const r = rows.find(x => x.id === id); if (!r) throw new ApiErr('not_found', '予約が見つかりません'); return r; };
   const full = r => ({ ...pub(r), people: r.people, contact: r.contact, note: r.note, lineName: r.lineName, rejectReason: r.rejectReason });
@@ -1227,7 +1236,7 @@ const demo = (() => {
     create: p => {
       const s = toMin(p.start), e = toMin(p.end);
       if (rows.some(r => active(r) && r.date === p.date && toMin(r.start) < e && s < toMin(r.end))) throw new ApiErr('conflict', 'その時間はほかの予約が入りました。選び直してください');
-      const r = R(0, p.start, p.end, 'pending', p.orgName, p.purpose, { date: p.date, userId: ME, people: String(p.people), contact: p.contact, note: p.note, lineName: 'デモ利用者' });
+      const r = R(0, p.start, p.end, 'pending', p.orgName, p.purpose, { date: p.date, userId: ME, people: String(p.people), contact: p.contact, note: p.note, lineName: 'デモ利用者', private: !!p.private });
       rows.push(r); return pub(r);
     },
     cancel: p => { const r = find(p.id); r.status = 'cancelled'; return { id: r.id, status: r.status }; },
