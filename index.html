@@ -399,7 +399,8 @@ const APP = {
   API_URL: 'https://script.google.com/macros/s/AKfycbxE0nbysAOi-UbsTpv02Crf74njGpBNGM4JGHOj1PBia523yBh7bDcrkgCdwRweQfFx/exec',
   FRIEND_URL: 'https://line.me/R/ti/p/@466mkdtu',
 };
-const DEMO = !APP.LIFF_ID || !APP.API_URL;
+// ?demo=1 を付けると、本番設定があっても架空データのデモ表示になる（説明資料のスクリーンショット用）
+const DEMO = !APP.LIFF_ID || !APP.API_URL || new URLSearchParams(location.search).has('demo');
 
 /* ===== アイコン（Material Icons） ===== */
 const IC = {
