@@ -27,6 +27,7 @@
   --ev-approved: #039BE5;   /* Peacock：確定 */
   --ev-mine: #0B8043;       /* Basil：自分の予約 */
   --ev-blocked: #616161;    /* Graphite：予約不可 */
+  --ev-busy: #7986CB;       /* Lavender：ほかの方の予約（予約あり） */
   --ev-text: #FFFFFF;
   --now: #EA4335;
   --closed: #F6F7F8;
@@ -43,7 +44,7 @@
   :root:not([data-theme="light"]) {
     --frame: #131314; --bg: #1F1F1F; --surface: #2A2A2A; --surface2: #303134; --ink: #E3E3E3; --muted: #9AA0A6; --line: #444746; --line-soft: #333537;
     --primary: #A8C7FA; --primary-ink: #062E6F; --primary-soft: #28354A; --fab: #004A77; --fab-ink: #C2E7FF;
-    --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-text: #FFFFFF; --now: #F28B82;
+    --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-busy: #6E7BC4; --ev-text: #FFFFFF; --now: #F28B82;
     --closed: #262626; --danger: #F28B82; --scrim: rgba(0,0,0,.6); --snack: #E3E3E3; --snack-ink: #1F1F1F;
     --shadow: 0 1px 3px rgba(0,0,0,.6), 0 4px 8px 3px rgba(0,0,0,.35);
     color-scheme: dark;
@@ -52,7 +53,7 @@
 :root[data-theme="dark"] {
   --frame: #131314; --bg: #1F1F1F; --surface: #2A2A2A; --surface2: #303134; --ink: #E3E3E3; --muted: #9AA0A6; --line: #444746; --line-soft: #333537;
   --primary: #A8C7FA; --primary-ink: #062E6F; --primary-soft: #28354A; --fab: #004A77; --fab-ink: #C2E7FF;
-  --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-text: #FFFFFF; --now: #F28B82;
+  --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-busy: #6E7BC4; --ev-text: #FFFFFF; --now: #F28B82;
   --closed: #262626; --danger: #F28B82; --scrim: rgba(0,0,0,.6); --snack: #E3E3E3; --snack-ink: #1F1F1F;
   --shadow: 0 1px 3px rgba(0,0,0,.6), 0 4px 8px 3px rgba(0,0,0,.35);
   color-scheme: dark;
@@ -443,7 +444,7 @@ const dateLabel = s => { const d = parseD(s); return `${d.getMonth() + 1}月${d.
 const durLabel = min => { const h = Math.floor(min / 60), m = min % 60; return (h ? `${h}時間` : '') + (m ? `${m}分` : ''); };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const $ = id => document.getElementById(id);
-const STATUS = { pending: '承認待ち', approved: '確定', rejected: 'お断り', cancelled: 'キャンセル', blocked: '予約不可' };
+const STATUS = { pending: '承認待ち', approved: '確定', rejected: 'お断り', cancelled: 'キャンセル', blocked: '予約不可', busy: '予約あり' };
 const VIEWS = { schedule: ['スケジュール', 'agenda'], day: ['日', 'day'], '3day': ['3日', 'three'], week: ['週', 'week'], month: ['月', 'month'] };
 
 const store = {
@@ -512,7 +513,11 @@ const shownOn = d => allOn(d).filter(x => state.filters[x.status] !== false);
 const rangeFree = (d, s, e) => !allOn(d).some(x => toMin(x.start) < e && s < toMin(x.end));
 const nextBusy = (d, after) => Math.min(closeMin(), ...allOn(d).map(x => toMin(x.start)).filter(s => s >= after));
 const prevBusy = (d, before) => Math.max(openMin(), ...allOn(d).map(x => toMin(x.end)).filter(e => e <= before));
-const colorOf = x => x.status === 'blocked' ? 'var(--ev-blocked)' : x.mine ? 'var(--ev-mine)' : 'var(--ev-approved)';
+const colorOf = x => x.status === 'blocked' ? 'var(--ev-blocked)' : x.status === 'busy' ? 'var(--ev-busy)' : x.mine ? 'var(--ev-mine)' : 'var(--ev-approved)';
+// ほかの人の予約を「予約あり」とだけ見せる設定か（スタッフは常に詳細が見える）
+const hidesOthers = () => C() && C().publicDetail !== 'full' && !state.me?.isAdmin;
+const helpText = br => (hidesOthers() ? '緑色は自分の予約、紫は「予約あり」（ほかの方の予約）、' : '緑色は自分の予約、') + '枠線だけの予定は承認待ちです。' + (br ? '<br>' : '')
+  + `空いている時間をタップすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。`;
 const notBookableMsg = d => isClosedDay(d) ? '定休日です'
   : d < firstBookable() ? `予約は${C().minLeadDays === 1 ? '翌日' : C().minLeadDays + '日後'}以降の日付からできます`
   : `予約は${dateLabel(lastBookable())}まで受け付けています`;
@@ -613,7 +618,7 @@ function renderSide() {
     ${cb('approved', '確定', 'var(--ev-approved)')}
     ${cb('pending', '承認待ち', 'var(--ev-approved)')}
     ${cb('blocked', '予約不可（お店の予定）', 'var(--ev-blocked)')}
-    <div class="dhelp">緑色は自分の予約、枠線だけの予定は承認待ちです。空いている時間をクリックすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。</div>`;
+    <div class="dhelp">${helpText(false)}</div>`;
 }
 $('side').addEventListener('click', async e => {
   if (e.target.closest('[data-create]')) return createQuick();
@@ -740,7 +745,7 @@ function renderMonth() {
 function cardHtml(x, extra = '') {
   return `<button class="card ${x.status}" style="--c:${colorOf(x)}" data-ev="${esc(x.id)}" data-date="${x.date}">
     <b>${esc(x.orgName)}</b><small class="num">${x.start}～${x.end}${x.purpose ? '・' + esc(x.purpose) : ''}</small>
-    ${x.status !== 'approved' && x.status !== 'blocked' ? `<span class="st">${STATUS[x.status]}</span>` : ''}${extra}</button>`;
+    ${!['approved', 'blocked', 'busy'].includes(x.status) ? `<span class="st">${STATUS[x.status]}</span>` : ''}${extra}</button>`;
 }
 function dateRow(d, inner) {
   return `<div class="drow"><div class="dlab ${d === state.today ? 'today' : ''}"><span class="dw">${WD[wd(d)]}</span><span class="dn num">${parseD(d).getDate()}</span></div>
@@ -917,7 +922,7 @@ function openEditor(submitIntent) {
     <div class="srow" id="r-purpose">${icon('notes')}<div class="body"><input id="f-purpose" maxlength="60" placeholder="利用目的を追加"></div></div>
     <div class="srow" id="r-people">${icon('people')}<div class="body"><input id="f-people" type="number" inputmode="numeric" min="1" max="200" placeholder="人数を追加"></div></div>
     <div class="hr"></div>
-    <div class="srow">${icon('eye')}<div class="body"><span>団体名と利用目的はカレンダーで公開されます</span><span class="hint">友だち登録している人なら誰でも見られます</span></div></div>
+    <div class="srow">${icon('eye')}<div class="body">${C().publicDetail === 'full' ? '<span>団体名と利用目的はカレンダーで公開されます</span><span class="hint">友だち登録している人なら誰でも見られます</span>' : '<span>ほかの人には「予約あり」とだけ表示されます</span><span class="hint">団体名や利用目的が見えるのは、あなたとスタッフだけです</span>'}</div></div>
     <div class="hr"></div>
     <div class="srow">${icon('phone')}<div class="body"><input id="f-contact" maxlength="60" placeholder="連絡先（電話番号またはメール）" autocomplete="tel"></div></div>
     <div class="srow">${icon('lock')}<div class="body"><textarea id="f-note" maxlength="300" placeholder="備考（プロジェクター使用、飲食の持ち込みなど）"></textarea><span class="hint">連絡先と備考はスタッフだけが見られます</span></div></div>
@@ -999,7 +1004,7 @@ function openDetail(id, date) {
   const acts = [];
   if (isAdmin && x.status === 'pending') acts.push(`<button class="tbtn danger" data-act="reject">お断りする</button><button class="tbtn fill" data-act="approve">承認する</button>`);
   else if (['pending', 'approved'].includes(x.status) && future && (x.mine || isAdmin)) acts.push(`<button class="tbtn danger" data-act="cancel">${x.mine ? '予約をキャンセル' : '店舗都合でキャンセル'}</button>`);
-  const statusNote = { pending: 'スタッフの承認待ちです。承認されると確定します。', approved: '予約は確定しています。', blocked: 'この時間はお店の都合で予約できません。', rejected: 'この申し込みはお断りしました。', cancelled: 'キャンセル済みです。' }[x.status];
+  const statusNote = { pending: 'スタッフの承認待ちです。承認されると確定します。', approved: '予約は確定しています。', blocked: 'この時間はお店の都合で予約できません。', busy: 'ほかの方の予約が入っています。', rejected: 'この申し込みはお断りしました。', cancelled: 'キャンセル済みです。' }[x.status];
   s.innerHTML = `<div class="grab"></div>
     <div class="shbar"><button class="ibtn" id="sh-close" aria-label="閉じる">${icon('close')}</button></div>
     <div class="srow"><span class="dot ${x.status === 'pending' ? 'pending' : ''}" style="--c:${colorOf(x)}"></span><div class="body">
@@ -1079,7 +1084,7 @@ function renderDrawer() {
     ${cb('approved', '確定', 'var(--ev-approved)')}
     ${cb('pending', '承認待ち', 'var(--ev-approved)')}
     ${cb('blocked', '予約不可（お店の予定）', 'var(--ev-blocked)')}
-    <div class="dhelp">緑色は自分の予約、枠線だけの予定は承認待ちです。<br>空いている時間をタップすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。</div>`;
+    <div class="dhelp">${helpText(true)}</div>`;
 }
 function openDrawer() { renderDrawer(); $('drawer').hidden = false; $('scrim').hidden = false; }
 function closeDrawer() { $('drawer').hidden = true; $('scrim').hidden = state.sheet !== 'detail'; }
@@ -1212,7 +1217,7 @@ const demo = (() => {
     R(15, '13:00', '18:00', 'approved', 'キャリア支援室', '企業説明会', { people: '40' }),
     R(19, '19:00', '23:00', 'approved', '写真サークル Lens', '卒業制作 打ち上げ', { people: '18' }),
   ];
-  const config = { open: '10:00', close: '24:00', slotMin: 30, maxSlots: 16, minLeadDays: 1, maxAheadDays: 60, closedWeekdays: [] };
+  const config = { open: '10:00', close: '24:00', slotMin: 30, maxSlots: 16, minLeadDays: 1, maxAheadDays: 60, closedWeekdays: [], publicDetail: 'busy' };
   const pub = r => ({ id: r.id, date: r.date, start: r.start, end: r.end, status: r.status, orgName: r.orgName, purpose: r.purpose, mine: r.userId === ME });
   const active = r => ['pending', 'approved', 'blocked'].includes(r.status);
   const find = id => { const r = rows.find(x => x.id === id); if (!r) throw new ApiErr('not_found', '予約が見つかりません'); return r; };
