@@ -58,6 +58,11 @@
   color-scheme: dark;
 }
 
+/* 基本のリセット（Artifact では公開時に自動で入るが、GitHub Pages など単体で置く場合に必要） */
+[hidden] { display: none !important; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
