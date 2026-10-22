@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ship スペース予約</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: Google Calendar (mobile) の操作感に合わせた1画面アプリ。
+   上部アプリバー → (月ピッカー) → 日付ヘッダー → スクロールする時間グリッド。右下にFAB、左からドロワー、下からシート。 */
+:root {
+  --frame: #F8FAFD;         /* PC表示の外側（Googleカレンダー Web の地色） */
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface2: #F1F3F4;
+  --ink: #1F1F1F;
+  --muted: #444746;
+  --line: #DADCE0;
+  --line-soft: #E8EAED;
+  --primary: #0B57D0;
+  --primary-ink: #FFFFFF;
+  --primary-soft: #D3E3FD;
+  --fab: #C2E7FF;
+  --fab-ink: #001D35;
+  --ev-approved: #039BE5;   /* Peacock：確定 */
+  --ev-mine: #0B8043;       /* Basil：自分の予約 */
+  --ev-blocked: #616161;    /* Graphite：予約不可 */
+  --ev-text: #FFFFFF;
+  --now: #EA4335;
+  --closed: #F6F7F8;
+  --danger: #D93025;
+  --scrim: rgba(0, 0, 0, .32);
+  --snack: #323232;
+  --snack-ink: #F1F1F1;
+  --shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15);
+
+  --font: "Roboto", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --hour: 48px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --frame: #131314; --bg: #1F1F1F; --surface: #2A2A2A; --surface2: #303134; --ink: #E3E3E3; --muted: #9AA0A6; --line: #444746; --line-soft: #333537;
+    --primary: #A8C7FA; --primary-ink: #062E6F; --primary-soft: #28354A; --fab: #004A77; --fab-ink: #C2E7FF;
+    --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-text: #FFFFFF; --now: #F28B82;
+    --closed: #262626; --danger: #F28B82; --scrim: rgba(0,0,0,.6); --snack: #E3E3E3; --snack-ink: #1F1F1F;
+    --shadow: 0 1px 3px rgba(0,0,0,.6), 0 4px 8px 3px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --frame: #131314; --bg: #1F1F1F; --surface: #2A2A2A; --surface2: #303134; --ink: #E3E3E3; --muted: #9AA0A6; --line: #444746; --line-soft: #333537;
+  --primary: #A8C7FA; --primary-ink: #062E6F; --primary-soft: #28354A; --fab: #004A77; --fab-ink: #C2E7FF;
+  --ev-approved: #0388C9; --ev-mine: #0B7A3E; --ev-blocked: #5F6368; --ev-text: #FFFFFF; --now: #F28B82;
+  --closed: #262626; --danger: #F28B82; --scrim: rgba(0,0,0,.6); --snack: #E3E3E3; --snack-ink: #1F1F1F;
+  --shadow: 0 1px 3px rgba(0,0,0,.6), 0 4px 8px 3px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45;
+  overflow: hidden; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+svg.i { width: 24px; height: 24px; fill: currentColor; flex: none; }
+.num { font-variant-numeric: tabular-nums; }
+
+.app { height: 100%; display: flex; flex-direction: column; }
+.gut { padding-left: max(4px, env(safe-area-inset-left, 0px)); padding-right: max(4px, env(safe-area-inset-right, 0px)); }
+
+/* ── app bar ── */
+.bar { display: flex; align-items: center; gap: 2px; height: 56px; flex: none; }
+.ibtn { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; }
+.ibtn:hover { background: var(--surface2); }
+.title-btn { display: flex; align-items: center; gap: 2px; font-size: 22px; padding: 6px 4px 6px 8px; border-radius: 8px; color: var(--ink); min-width: 0; }
+.title-btn svg { color: var(--muted); transition: transform .2s; }
+.title-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.spacer { flex: 1; }
+.today-ic { position: relative; }
+.today-ic span { position: absolute; left: 0; right: 0; top: 18px; text-align: center; font-size: 10px; font-weight: 500; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--ev-mine); color: #fff; display: grid; place-items: center; font-size: 14px; font-weight: 500; margin: 0 8px 0 4px; flex: none; }
+.demo { flex: none; font-size: 12px; color: var(--muted); background: var(--surface2); padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.demo.error { background: #FCE8E6; color: #A50E0E; }
+.demo a { color: var(--primary); font-weight: 500; }
+
+/* ── mini month picker ── */
+.mini { flex: none; padding-block: 4px 12px; border-bottom: 1px solid var(--line); }
+.mini-head { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 4px 16px; font-weight: 500; }
+.mini-head > span:last-child { display: flex; }
+.mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; padding: 0 8px; }
+.mgrid .w { font-size: 11px; color: var(--muted); padding: 4px 0; }
+.mgrid button { height: 36px; display: grid; place-items: center; position: relative; }
+.mgrid button span { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; }
+.mgrid button.out span { color: var(--muted); opacity: .5; }
+.mgrid button.today span { background: var(--primary); color: var(--primary-ink); }
+.mgrid button.cur:not(.today) span { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.mgrid button.has::after { content: ""; position: absolute; bottom: 1px; width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+
+/* ── time grid ── */
+.main { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.tg-head { flex: none; display: grid; grid-template-columns: 52px repeat(var(--n), minmax(0, 1fr)); border-bottom: 1px solid var(--line); box-shadow: 0 2px 3px -2px rgba(0,0,0,.15); position: relative; z-index: 2; background: var(--bg); }
+.dh { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 8px; color: var(--muted); }
+.dh.one { align-items: flex-start; padding-left: 4px; }
+.dh .dw { font-size: 11px; font-weight: 500; }
+.dh .dn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; color: var(--ink); }
+.dh.today { color: var(--primary); }
+.dh.today .dn { background: var(--primary); color: var(--primary-ink); }
+.dh.sun .dn { color: var(--danger); } .dh.today.sun .dn { color: var(--primary-ink); }
+.tg-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.tg-inner { display: grid; grid-template-columns: 52px minmax(0, 1fr); padding: 10px 0 120px; }
+.times { position: relative; }
+.times span { position: absolute; right: 8px; transform: translateY(-50%); font-size: 11px; color: var(--muted); }
+.cols {
+  position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  background-image: linear-gradient(var(--line-soft) 1px, transparent 1px);
+  background-size: 100% var(--hour); border-bottom: 1px solid var(--line-soft);
+}
+.col { position: relative; border-left: 1px solid var(--line-soft); touch-action: pan-y; }
+.col.closed { background: var(--closed); }
+.watch { position: absolute; left: 2px; font-size: 10px; color: var(--muted); letter-spacing: .1em; pointer-events: none; padding-top: 2px; }
+
+.ev {
+  position: absolute; left: 1px; right: 4px; border-radius: 6px; padding: 3px 6px; overflow: hidden;
+  font-size: 12px; line-height: 1.3; color: var(--ev-text); background: var(--c); text-align: left;
+  display: flex; flex-direction: column; border: 1px solid var(--bg);
+}
+.ev b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev small { font-size: 11px; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev.pending { background: var(--bg); color: var(--c); border: 1.5px solid var(--c); }
+.ev.tight { flex-direction: row; gap: 4px; align-items: center; padding-block: 0; }
+.many .ev { padding: 2px 3px; font-size: 11px; }
+.many .ev small { display: none; }
+
+.draft {
+  position: absolute; left: 1px; right: 4px; border-radius: 6px; background: var(--primary); color: var(--primary-ink);
+  box-shadow: var(--shadow); padding: 3px 6px; font-size: 12px; z-index: 3; touch-action: none;
+}
+.draft b { display: block; font-weight: 500; }
+.handle { position: absolute; width: 28px; height: 28px; display: grid; place-items: center; touch-action: none; cursor: ns-resize; z-index: 4; }
+.handle::before { content: ""; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--primary); background: var(--bg); }
+.handle.top { top: -14px; left: 6px; }
+.handle.bot { bottom: -14px; right: 6px; }
+.nowline { position: absolute; left: -1px; right: 0; height: 2px; background: var(--now); z-index: 2; pointer-events: none; }
+.nowline::before { content: ""; position: absolute; left: -6px; top: -5px; width: 12px; height: 12px; border-radius: 50%; background: var(--now); }
+
+/* ── month view ── */
+.mv { flex: 1; min-height: 0; display: grid; grid-template-rows: auto repeat(var(--rows), minmax(0, 1fr)); }
+.mv-w { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; font-size: 11px; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+.mv-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--line-soft); min-height: 0; }
+.mc { border-left: 1px solid var(--line-soft); padding: 2px 1px; display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; text-align: center; }
+.mc:first-child { border-left: 0; }
+.mc .dn { align-self: center; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; margin-bottom: 1px; }
+.mc.out { color: var(--muted); opacity: .45; }
+.mc.today .dn { background: var(--primary); color: var(--primary-ink); }
+.mc.closed { background: var(--closed); }
+.chip { display: block; font-size: 11px; font-weight: 700; line-height: 18px; border-radius: 4px; padding: 0 4px; color: var(--ev-text); background: var(--c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; flex: none; }
+.chip.pending { background: var(--bg); color: var(--c); box-shadow: inset 0 0 0 1.5px var(--c); }
+.more { font-size: 11px; font-weight: 500; color: var(--muted); text-align: left; padding-left: 4px; }
+@media (min-width: 900px) {
+  .mc { gap: 2px; padding: 4px 4px; }
+  .mc .dn { font-size: 13px; width: 28px; height: 28px; }
+  .chip { font-size: 13px; line-height: 24px; padding: 0 8px; border-radius: 6px; }
+  .chip .ct { font-weight: 400; opacity: .9; margin-right: 4px; }
+  .more { font-size: 12px; padding-left: 8px; }
+}
+.chip .ct { display: none; }
+@media (min-width: 900px) { .chip .ct { display: inline; } }
+
+/* ── schedule / lists ── */
+.list { flex: 1; min-height: 0; overflow-y: auto; padding-block: 8px 120px; padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+.mon { font-size: 15px; font-weight: 500; padding: 18px 0 8px 64px; }
+.drow { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px; padding: 4px 0; }
+.dlab { display: flex; flex-direction: column; align-items: center; color: var(--muted); padding-top: 2px; }
+.dlab .dw { font-size: 11px; font-weight: 500; }
+.dlab .dn { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; color: var(--ink); }
+.dlab.today { color: var(--primary); }
+.dlab.today .dn { background: var(--primary); color: var(--primary-ink); }
+.devs { display: grid; gap: 6px; min-width: 0; }
+.card { border-radius: 8px; padding: 8px 12px; background: var(--c); color: var(--ev-text); text-align: left; display: grid; gap: 1px; width: 100%; }
+.card.pending { background: var(--bg); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--c); }
+.card b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.card small { font-size: 12px; opacity: .92; }
+.card .st { font-size: 11px; font-weight: 500; }
+.card.rejected, .card.cancelled { background: var(--surface2); color: var(--muted); box-shadow: none; text-decoration: line-through; text-decoration-color: var(--muted); }
+.card.rejected .st, .card.cancelled .st, .card.rejected small { text-decoration: none; display: inline-block; }
+.empty-day { color: var(--muted); font-size: 13px; padding: 10px 0; }
+.empty { color: var(--muted); text-align: center; padding: 48px 24px; font-size: 14px; }
+.ptitle { font-size: 18px; font-weight: 500; padding: 8px 0 4px 64px; }
+.psub { font-size: 13px; color: var(--muted); padding: 0 0 6px 64px; }
+
+/* ── FAB ── */
+.fab {
+  position: fixed; z-index: 6; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 56px; height: 56px; border-radius: 16px; background: var(--fab); color: var(--fab-ink); display: grid; place-items: center; box-shadow: var(--shadow);
+}
+.fab svg { width: 28px; height: 28px; }
+
+/* ── drawer ── */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 20; }
+.drawer {
+  position: fixed; z-index: 21; top: 0; bottom: 0; left: 0; width: min(304px, 84vw); background: var(--surface);
+  padding-top: calc(12px + env(safe-area-inset-top, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px); overflow-y: auto; border-radius: 0 16px 16px 0;
+}
+.dr-title { font-size: 20px; padding: 8px 24px 14px; display: flex; align-items: baseline; gap: 8px; }
+.dr-title b { font-weight: 500; letter-spacing: .06em; }
+.dr-title span { font-size: 14px; color: var(--muted); }
+.ditem { display: flex; align-items: center; gap: 20px; width: calc(100% - 12px); height: 48px; padding: 0 16px 0 20px; border-radius: 0 24px 24px 0; font-size: 14px; font-weight: 500; color: var(--ink); text-align: left; }
+.ditem svg { color: var(--muted); }
+.ditem[aria-current="true"] { background: var(--primary-soft); color: var(--primary); }
+.ditem[aria-current="true"] svg { color: var(--primary); }
+.ditem .badge { margin-left: auto; font-size: 12px; background: var(--danger); color: #fff; border-radius: 10px; padding: 0 7px; line-height: 20px; }
+.dsep { height: 1px; background: var(--line); margin: 8px 0 8px 20px; }
+.dlabel { font-size: 12px; color: var(--muted); padding: 8px 24px; font-weight: 500; }
+.cbx { display: flex; align-items: center; gap: 18px; height: 40px; padding: 0 24px; cursor: pointer; font-size: 14px; }
+.cbx input { width: 18px; height: 18px; accent-color: var(--c); margin: 0; }
+.dhelp { font-size: 12px; color: var(--muted); padding: 8px 24px 20px; line-height: 1.6; }
+
+/* ── bottom sheet ── */
+.sheet {
+  position: fixed; z-index: 22; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow); max-height: 85%; overflow-y: auto;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px));
+}
+.sheet.full { top: 0; max-height: none; border-radius: 0; padding-top: env(safe-area-inset-top, 0px); }
+.sheet .grab { width: 32px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 4px; }
+.shbar { display: flex; align-items: center; gap: 4px; height: 56px; }
+.save { margin-left: auto; margin-right: 8px; background: var(--primary); color: var(--primary-ink); border-radius: 20px; padding: 0 22px; height: 36px; font-weight: 500; }
+.save:disabled { opacity: .5; }
+.titlein { width: 100%; border: 0; background: transparent; font-size: 22px; padding: 6px 16px 12px 72px; outline: none; border-bottom: 1px solid var(--line); }
+.titlein::placeholder { color: var(--muted); }
+.peek-title { font-size: 20px; padding: 2px 16px 0; }
+.srow { display: flex; gap: 24px; align-items: flex-start; padding: 12px 16px 12px 24px; min-height: 52px; }
+.srow > svg { color: var(--muted); margin-top: 1px; }
+.srow .body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.srow input, .srow textarea { width: 100%; border: 0; background: transparent; font-size: 16px; padding: 2px 0; outline: none; }
+.srow textarea { resize: none; min-height: 48px; }
+.srow input::placeholder, .srow textarea::placeholder { color: var(--muted); }
+.srow .hint { font-size: 12px; color: var(--muted); }
+.srow.err input::placeholder { color: var(--danger); }
+.srow.err > svg { color: var(--danger); }
+.hr { height: 1px; background: var(--line); margin-left: 72px; }
+.timepick { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 16px; }
+.timepick select { border: 0; background: var(--surface2); border-radius: 6px; padding: 6px 8px; font-size: 16px; }
+.dot { width: 16px; height: 16px; border-radius: 4px; background: var(--c); margin: 4px 4px 0; flex: none; }
+.dot.pending { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.dtitle { font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.dsub { color: var(--muted); font-size: 14px; }
+.stchip { display: inline-block; justify-self: start; font-size: 12px; font-weight: 500; padding: 2px 10px; border-radius: 12px; background: var(--surface2); color: var(--muted); }
+.stchip.approved { background: var(--ev-approved); color: #fff; }
+.stchip.pending { background: var(--primary-soft); color: var(--primary); }
+.shact { display: flex; gap: 8px; justify-content: flex-end; padding: 8px 16px 4px; flex-wrap: wrap; }
+.tbtn { height: 40px; padding: 0 16px; border-radius: 20px; font-weight: 500; color: var(--primary); }
+.tbtn:hover { background: var(--primary-soft); }
+.tbtn.fill { background: var(--primary); color: var(--primary-ink); }
+.tbtn.danger { color: var(--danger); }
+
+/* ── dialog / snackbar ── */
+.dlg-wrap { position: fixed; inset: 0; z-index: 30; background: var(--scrim); display: grid; place-items: center; padding: 24px; }
+.dlg { width: 100%; max-width: 340px; background: var(--surface); border-radius: 28px; padding: 24px 24px 16px; display: grid; gap: 14px; }
+.dlg h3 { margin: 0; font-size: 22px; font-weight: 400; }
+.dlg p { margin: 0; color: var(--muted); white-space: pre-line; }
+.dlg textarea { width: 100%; min-height: 72px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: transparent; font-size: 16px; }
+.dlg .shact { padding: 0; }
+.snack {
+  position: fixed; z-index: 31; left: calc(16px + env(safe-area-inset-left, 0px)); right: calc(88px + env(safe-area-inset-right, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px)); max-width: 480px;
+  background: var(--snack); color: var(--snack-ink); border-radius: 4px; padding: 14px 16px; font-size: 14px; box-shadow: var(--shadow);
+}
+/* ── タブレット（iPad縦など）：スマホの構成のまま、シートは中央のダイアログに、文字は一回り大きく ── */
+@media (min-width: 600px) and (max-width: 899px) {
+  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(520px, calc(100% - 48px)); max-height: 80%; border-radius: 28px; padding: 8px 8px 16px; }
+  .sheet.peek { left: auto; top: auto; right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: none; width: 400px; }
+  .sheet.full { width: min(600px, calc(100% - 48px)); top: 50%; bottom: auto; max-height: 88%; border-radius: 28px; padding: 8px 8px 16px; }
+  .sheet .grab { display: none; }
+  .tg-head { grid-template-columns: 64px repeat(var(--n), minmax(0, 1fr)); }
+  .tg-inner { grid-template-columns: 64px minmax(0, 1fr); }
+  .dh .dn { width: 42px; height: 42px; font-size: 24px; }
+  .dh.one { align-items: center; padding-left: 0; }
+  .many .ev { padding: 3px 5px; font-size: 12px; }
+  .many .ev small { display: block; }
+  .mc { gap: 2px; padding: 3px; }
+  .mc .dn { font-size: 13px; width: 28px; height: 28px; }
+  .chip { font-size: 12px; line-height: 22px; padding: 0 6px; border-radius: 5px; }
+  .chip .ct { display: inline; font-weight: 400; opacity: .9; margin-right: 4px; }
+  .more { font-size: 12px; padding-left: 6px; }
+  .list { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
+  .snack { right: auto; min-width: 344px; }
+  .drawer { width: 320px; }
+}
+
+/* ── PC表示（Googleカレンダー Web と同じ構成） ── */
+.brandm, .dnav, .dview, .side { display: none; }
+.brandm { align-items: center; gap: 10px; padding: 0 12px 0 4px; font-size: 22px; color: var(--muted); white-space: nowrap; }
+.logo { width: 40px; height: 40px; border-radius: 8px; background: #221613; color: #EBD385; display: grid; place-items: center; font-size: 13px; font-weight: 500; letter-spacing: .08em; }
+.pill { height: 40px; padding: 0 20px; border-radius: 20px; border: 1px solid #747775; font-size: 14px; font-weight: 500; color: var(--ink); background: transparent; }
+.pill:hover { background: var(--surface2); }
+select.pill { padding: 0 14px; appearance: auto; }
+.create { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px 0 16px; border-radius: 16px; background: var(--bg); box-shadow: var(--shadow); font-size: 14px; font-weight: 500; margin: 0 0 16px 4px; color: var(--ink); }
+.create svg { color: var(--primary); }
+.side .mgrid button { height: 28px; } .side .mgrid button span { width: 24px; height: 24px; font-size: 11px; }
+.side .mini-head { padding: 0 0 2px 12px; font-size: 14px; }
+.side .mini-head .ibtn { width: 32px; height: 32px; }
+.side .mini-head .ibtn svg { width: 18px; height: 18px; }
+.side .mgrid { padding: 0; }
+.side .dlabel { padding: 16px 12px 4px; font-size: 14px; color: var(--ink); }
+.side .cbx { padding: 0 12px; height: 32px; gap: 14px; }
+.side .ditem { width: 100%; height: 40px; padding: 0 12px; border-radius: 20px; gap: 14px; }
+.side .dhelp { padding: 12px; }
+.tz { font-size: 10px; color: var(--muted); align-self: end; padding: 0 0 4px 6px; }
+
+@media (min-width: 900px) {
+  body { background: var(--frame); }
+  body::before { background: var(--frame); }
+  .app { display: grid; grid-template-columns: 256px minmax(0, 1fr); grid-template-rows: 64px auto minmax(0, 1fr); }
+  .app.collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+  .app.collapsed .side { visibility: hidden; }
+  .bar { grid-column: 1 / -1; height: 64px; gap: 4px; padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .demo { grid-column: 1 / -1; border-radius: 12px; margin: 0 16px 8px; }
+  .brandm, .dnav, .dview { display: flex; }
+  .dnav.ibtn { display: grid; }
+  .today-ic, .fab, #mini { display: none !important; }
+  .title-btn { pointer-events: none; padding-left: 12px; }
+  .title-btn svg { display: none; }
+  .pill.dnav { align-items: center; margin: 0 8px 0 24px; }
+  .side { display: block; grid-column: 1; grid-row: 3; overflow-y: auto; padding: 4px 12px 16px; }
+  .main { grid-column: 2; grid-row: 3;background: var(--bg); border-radius: 24px; margin: 0 16px 16px 0; overflow: hidden; }
+  .app.collapsed .main { margin-left: 16px; }
+  .tg-head { grid-template-columns: 64px repeat(var(--n), minmax(0, 1fr)); box-shadow: none; padding-top: 8px; }
+  .tg-inner { grid-template-columns: 64px minmax(0, 1fr); padding-bottom: 24px; }
+  .dh .dn { width: 46px; height: 46px; font-size: 26px; }
+  .dh .dw { font-size: 11px; }
+  .dh.one { align-items: center; padding-left: 0; }
+  .many .ev { padding: 3px 6px; font-size: 12px; }
+  .many .ev small { display: block; }
+  .list { padding-left: 24px; padding-right: 24px; padding-bottom: 24px; }
+  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: 448px; max-height: 80%; border-radius: 28px; padding: 8px 8px 16px; }
+  .sheet.peek { left: auto; top: auto; right: 32px; bottom: 32px; transform: none; width: 420px; }
+  .sheet.full { width: 600px; top: 50%; bottom: auto; max-height: 88%; border-radius: 28px; padding: 8px 8px 16px; }
+  .sheet .grab { display: none; }
+  .snack { right: auto; min-width: 344px; }
+}
+@media (min-width: 600px) and (prefers-reduced-motion: no-preference) {
+  body .sheet { animation: fade .15s ease-out; } /* 中央配置の transform と競合しないよう、フェードだけにする */
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: up .2s ease-out; }
+  .drawer { animation: slide .2s ease-out; }
+  .snack { animation: up .18s ease-out; }
+  @keyframes up { from { transform: translateY(24px); opacity: .3; } }
+  @keyframes slide { from { transform: translateX(-40px); opacity: .3; } }
+  @keyframes fade { from { opacity: 0; } }
+}
+</style>
+
+<div class="app">
+  <header class="bar gut">
+    <button class="ibtn" id="menu-btn" aria-label="メインメニュー"></button>
+    <div class="brandm"><span class="logo">SHIP</span><span>スペース予約</span></div>
+    <button class="pill dnav" id="today-pill">今日</button>
+    <button class="ibtn dnav" id="nav-prev" aria-label="前の期間"></button>
+    <button class="ibtn dnav" id="nav-next" aria-label="次の期間"></button>
+    <button class="title-btn" id="title-btn" aria-expanded="false"><span id="title-text"></span></button>
+    <div class="spacer"></div>
+    <div class="dview"><select class="pill" id="view-select" aria-label="表示の切り替え"></select></div>
+    <button class="ibtn today-ic" id="today-btn" aria-label="今日"></button>
+    <div class="avatar" id="avatar" aria-hidden="true"></div>
+  </header>
+  <div class="demo" id="banner" hidden></div>
+  <div class="mini" id="mini" hidden></div>
+  <aside class="side" id="side"></aside>
+  <div class="main" id="main"></div>
+</div>
+
+<button class="fab" id="fab" aria-label="予約を作成"></button>
+<div class="scrim" id="scrim" hidden></div>
+<nav class="drawer" id="drawer" hidden></nav>
+<div class="sheet" id="sheet" hidden></div>
+<div class="dlg-wrap" id="dlg" hidden></div>
+<div class="snack" id="snack" role="status" hidden></div>
+
+<script>
+/* ===== 設定（本番ではここだけ書き換える） ===== */
+const APP = {
+  LIFF_ID: '2012154536-adJ3W6OF',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxE0nbysAOi-UbsTpv02Crf74njGpBNGM4JGHOj1PBia523yBh7bDcrkgCdwRweQfFx/exec',
+  FRIEND_URL: 'https://line.me/R/ti/p/@466mkdtu',
+};
+const DEMO = !APP.LIFF_ID || !APP.API_URL;
+
+/* ===== アイコン（Material Icons） ===== */
+const IC = {
+  menu: 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  drop: 'M7 10l5 5 5-5z',
+  left: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
+  right: 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
+  cal: 'M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z',
+  clock: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
+  people: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
+  notes: 'M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z',
+  phone: 'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+  info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+  eye: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
+  lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
+  person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  agenda: 'M20 13H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zm0-10H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1z',
+  day: 'M2 21h19v-3H2v3zM20 8H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1zM2 3v3h19V3H2z',
+  three: 'M10 18h5V5h-5v13zm-6 0h5V5H4v13zM16 5v13h5V5h-5z',
+  week: 'M6 5H3c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h3c.55 0 1-.45 1-1V6c0-.55-.45-1-1-1zm14 0h-3c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h3c.55 0 1-.45 1-1V6c0-.55-.45-1-1-1zm-7 0h-3c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h3c.55 0 1-.45 1-1V6c0-.55-.45-1-1-1z',
+  month: 'M3 5v14h18V5H3zm16 6h-3.33V7H19v4zm-5.33 0h-3.33V7h3.33v4zM8.33 7v4H5V7h3.33zM5 17v-4h3.33v4H5zm5.33 0v-4h3.33v4h-3.33zm5.34 0v-4H19v4h-3.33z',
+  mine: 'M16.53 11.06 15.47 10l-4.88 4.88-2.12-2.12-1.06 1.06L10.59 17l5.94-5.94zM19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z',
+  approve: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+};
+const icon = (k, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[k]}"/></svg>`;
+
+/* ===== 日付ユーティリティ ===== */
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseD = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseD(s); d.setDate(d.getDate() + n); return ymd(d); };
+const addMonths = (s, n) => { const d = parseD(s); return ymd(new Date(d.getFullYear(), d.getMonth() + n, 1)); };
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const fmtMin = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+const WD = '日月火水木金土';
+const wd = s => parseD(s).getDay();
+const dateLabel = s => { const d = parseD(s); return `${d.getMonth() + 1}月${d.getDate()}日(${WD[d.getDay()]})`; };
+const durLabel = min => { const h = Math.floor(min / 60), m = min % 60; return (h ? `${h}時間` : '') + (m ? `${m}分` : ''); };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = id => document.getElementById(id);
+const STATUS = { pending: '承認待ち', approved: '確定', rejected: 'お断り', cancelled: 'キャンセル', blocked: '予約不可' };
+const VIEWS = { schedule: ['スケジュール', 'agenda'], day: ['日', 'day'], '3day': ['3日', 'three'], week: ['週', 'week'], month: ['月', 'month'] };
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('ship-rsv-' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ship-rsv-' + k, JSON.stringify(v)); } catch (e) { /* 保存できない環境 */ } },
+};
+
+/* ===== 状態 ===== */
+const state = {
+  config: null, today: ymd(new Date()), me: null,
+  view: store.get('view', 'week'), cursor: null,
+  items: {},                 // 'yyyy-MM' -> 予約の配列
+  draft: null,               // { date, s, e }（分）
+  sheet: null,               // 'peek' | 'edit' | 'detail'
+  filters: store.get('filters', { approved: true, pending: true, blocked: true }),
+  pendingCount: 0, miniMonth: null,
+};
+
+/* ===== API ===== */
+class ApiErr extends Error { constructor(code, msg) { super(msg); this.code = code; } }
+
+async function api(action, params = {}) {
+  if (DEMO) return demoApi(action, params);
+  const tok = liff.getIDToken();
+  const dec = liff.getDecodedIDToken();
+  if (!tok || (dec && dec.exp * 1000 < Date.now() + 30000)) throw relogin();
+  let res;
+  try {
+    res = await fetch(APP.API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // プリフライトを避ける
+      body: JSON.stringify({ action, idToken: tok, ...params }),
+    });
+  } catch (e) {
+    throw new ApiErr('network', '通信できませんでした。電波の良い場所でもう一度お試しください');
+  }
+  const j = await res.json().catch(() => null);
+  if (!j) throw new ApiErr('network', 'サーバーから正しい応答がありませんでした');
+  if (!j.ok) {
+    if (j.error === 'token_invalid') throw relogin();
+    throw new ApiErr(j.error, j.message);
+  }
+  return j.data;
+}
+
+function relogin() {
+  if (!liff.isInClient()) { liff.logout(); liff.login({ redirectUri: location.href }); }
+  return new ApiErr('token_invalid', 'ログインの有効期限が切れました。画面を閉じて、トークのメニューから開き直してください');
+}
+
+function loadScript(src) {
+  return new Promise((ok, ng) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = ng; document.head.appendChild(s); });
+}
+
+/* ===== 予約ルール ===== */
+const C = () => state.config;
+const openMin = () => toMin(C().open);
+const closeMin = () => toMin(C().close);
+const SLOT = () => C().slotMin;
+const firstBookable = () => addDays(state.today, C().minLeadDays);
+const lastBookable = () => addDays(state.today, C().maxAheadDays);
+const isClosedDay = d => C().closedWeekdays.includes(wd(d));
+const isBookable = d => d >= firstBookable() && d <= lastBookable() && !isClosedDay(d);
+const allOn = d => (state.items[d.slice(0, 7)] || []).filter(x => x.date === d).sort((a, b) => a.start.localeCompare(b.start));
+const shownOn = d => allOn(d).filter(x => state.filters[x.status] !== false);
+const rangeFree = (d, s, e) => !allOn(d).some(x => toMin(x.start) < e && s < toMin(x.end));
+const nextBusy = (d, after) => Math.min(closeMin(), ...allOn(d).map(x => toMin(x.start)).filter(s => s >= after));
+const prevBusy = (d, before) => Math.max(openMin(), ...allOn(d).map(x => toMin(x.end)).filter(e => e <= before));
+const colorOf = x => x.status === 'blocked' ? 'var(--ev-blocked)' : x.mine ? 'var(--ev-mine)' : 'var(--ev-approved)';
+const notBookableMsg = d => isClosedDay(d) ? '定休日です'
+  : d < firstBookable() ? `予約は${C().minLeadDays === 1 ? '翌日' : C().minLeadDays + '日後'}以降の日付からできます`
+  : `予約は${dateLabel(lastBookable())}まで受け付けています`;
+
+/* ===== 読み込み ===== */
+async function loadMonth(ym, force) {
+  if (state.items[ym] && !force) return;
+  const [y, m] = ym.split('-').map(Number);
+  const data = await api('schedule', { from: `${ym}-01`, to: `${ym}-${pad(new Date(y, m, 0).getDate())}` });
+  state.config = data.config; state.today = data.today; state.me = data.me;
+  state.items[ym] = data.items;
+}
+async function loadRange(from, to, force) {
+  const months = [];
+  for (let m = from.slice(0, 7) + '-01'; m <= to; m = addMonths(m, 1)) months.push(m.slice(0, 7));
+  await Promise.all(months.map(m => loadMonth(m, force)));
+}
+function visibleRange() {
+  const c = state.cursor;
+  if (state.view === 'day') return [c, c];
+  if (state.view === '3day') return [c, addDays(c, 2)];
+  if (state.view === 'week') { const s = addDays(c, -wd(c)); return [s, addDays(s, 6)]; }
+  if (state.view === 'month') { const f = c.slice(0, 8) + '01'; const s = addDays(f, -wd(f)); return [s, addDays(s, 41)]; }
+  return [state.today, lastBookable()];
+}
+async function refresh(force) {
+  const [f, t] = visibleRange();
+  try { await loadRange(f, t, force); } catch (e) { showError(e); }
+  render();
+}
+async function refreshPendingCount() {
+  if (!state.me?.isAdmin) return;
+  try { const d = await api('adminList'); state.pendingCount = d.pending.length; if (!$('drawer').hidden) renderDrawer(); } catch (e) { /* 表示だけ */ }
+}
+
+/* ===== 上部バー ===== */
+const desktopMQ = matchMedia('(min-width: 900px)');
+const isDesktop = () => desktopMQ.matches;
+const jpHour = t => { const h = Math.floor(t / 60); return h < 12 ? `午前${h}時` : `午後${h === 12 ? 12 : h - 12}時`; };
+
+function renderBar() {
+  const d = parseD(state.cursor), ty = parseD(state.today).getFullYear();
+  let title;
+  if (['mine', 'admin'].includes(state.view)) title = state.view === 'mine' ? 'マイ予約' : '承認';
+  else if (isDesktop()) {
+    // Web版と同じく「2026年 10月」、週が月をまたぐときは「2026年 10月～11月」
+    const [f, t] = state.view === 'schedule' || state.view === 'month' ? [state.cursor, state.cursor] : visibleRange();
+    const a = parseD(f), b = parseD(t);
+    title = `${a.getFullYear()}年 ${a.getMonth() + 1}月` + (a.getMonth() !== b.getMonth()
+      ? `～${a.getFullYear() !== b.getFullYear() ? b.getFullYear() + '年 ' : ''}${b.getMonth() + 1}月` : '');
+  } else title = (d.getFullYear() !== ty ? `${d.getFullYear()}年` : '') + `${d.getMonth() + 1}月`;
+  $('title-text').textContent = title;
+  $('view-select').innerHTML = Object.entries(VIEWS).map(([v, [l]]) => `<option value="${v}" ${state.view === v ? 'selected' : ''}>${l}</option>`).join('')
+    + (VIEWS[state.view] ? '' : `<option value="" selected hidden>${state.view === 'mine' ? 'マイ予約' : '承認'}</option>`);
+  const navOn = ['day', '3day', 'week', 'month'].includes(state.view);
+  $('nav-prev').style.visibility = $('nav-next').style.visibility = navOn ? '' : 'hidden';
+  renderSide();
+  $('title-btn').querySelector('svg')?.remove();
+  if (!['mine', 'admin', 'schedule'].includes(state.view)) $('title-btn').insertAdjacentHTML('beforeend', icon('drop'));
+  $('today-btn').innerHTML = icon('cal') + `<span class="num">${parseD(state.today).getDate()}</span>`;
+  $('avatar').textContent = (state.me?.name || 'S').trim().charAt(0);
+  $('fab').hidden = ['mine', 'admin'].includes(state.view) || state.sheet === 'edit';
+}
+
+/* ===== 月ピッカー（タイトルをタップ） ===== */
+function renderMini() {
+  if (!$('mini').hidden) $('mini').innerHTML = miniHtml();
+  if (isDesktop() && $('side-mini')) $('side-mini').innerHTML = miniHtml();
+}
+function miniHtml() {
+  const m0 = state.miniMonth || state.cursor.slice(0, 8) + '01';
+  const start = addDays(m0, -wd(m0));
+  const d0 = parseD(m0);
+  let h = `<div class="mini-head"><span>${d0.getFullYear()}年${d0.getMonth() + 1}月</span><span>
+    <button class="ibtn" data-mini="-1" aria-label="前の月">${icon('left')}</button><button class="ibtn" data-mini="1" aria-label="次の月">${icon('right')}</button></span></div>
+    <div class="mgrid">${WD.split('').map(w => `<div class="w">${w}</div>`).join('')}`;
+  for (let i = 0; i < 42; i++) {
+    const ds = addDays(start, i);
+    const cls = [ds.slice(0, 7) !== m0.slice(0, 7) ? 'out' : '', ds === state.today ? 'today' : '', ds === state.cursor ? 'cur' : '', allOn(ds).length ? 'has' : ''].join(' ');
+    h += `<button class="${cls}" data-pick="${ds}" aria-label="${dateLabel(ds)}"><span class="num">${parseD(ds).getDate()}</span></button>`;
+  }
+  return h + '</div>';
+}
+
+/* PC表示の左サイドバー（作成ボタン・ミニカレンダー・絞り込み） */
+function renderSide() {
+  const side = $('side');
+  if (!isDesktop()) { side.innerHTML = ''; return; }
+  const item = (v, label, ic, badge) => `<button class="ditem" data-view="${v}" aria-current="${state.view === v}">${icon(ic)}<span>${label}</span>${badge ? `<span class="badge num">${badge}</span>` : ''}</button>`;
+  const cb = (k, label, color) => `<label class="cbx" style="--c:${color}"><input type="checkbox" data-filter="${k}" ${state.filters[k] !== false ? 'checked' : ''}>${label}</label>`;
+  if (!state.miniMonth || state.miniMonth.slice(0, 7) !== state.cursor.slice(0, 7) && !side.dataset.browsing) state.miniMonth = state.cursor.slice(0, 8) + '01';
+  side.innerHTML = `<button class="create" data-create>${icon('add')}<span>予約</span></button>
+    <div class="mini-wrap" id="side-mini">${miniHtml()}</div>
+    <div class="dlabel">予約</div>
+    ${item('mine', 'マイ予約', 'mine')}
+    ${state.me?.isAdmin ? item('admin', '承認（スタッフ）', 'approve', state.pendingCount) : ''}
+    <div class="dlabel">表示する予定</div>
+    ${cb('approved', '確定', 'var(--ev-approved)')}
+    ${cb('pending', '承認待ち', 'var(--ev-approved)')}
+    ${cb('blocked', '予約不可（お店の予定）', 'var(--ev-blocked)')}
+    <div class="dhelp">緑色は自分の予約、枠線だけの予定は承認待ちです。空いている時間をクリックすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。</div>`;
+}
+$('side').addEventListener('click', async e => {
+  if (e.target.closest('[data-create]')) return createQuick();
+  const v = e.target.closest('[data-view]');
+  if (v) return setView(v.dataset.view);
+  const nav = e.target.closest('[data-mini]'), pick = e.target.closest('[data-pick]');
+  if (nav) {
+    $('side').dataset.browsing = '1';
+    state.miniMonth = addMonths(state.miniMonth, Number(nav.dataset.mini)); renderMini();
+    try { await loadMonth(state.miniMonth.slice(0, 7)); renderMini(); } catch (err) { /* 点の表示だけ */ }
+  } else if (pick) {
+    delete $('side').dataset.browsing;
+    state.cursor = pick.dataset.pick;
+    if (!['day', '3day', 'week', 'month'].includes(state.view)) state.view = 'day';
+    refresh();
+  }
+});
+$('side').addEventListener('change', e => {
+  const f = e.target.dataset.filter;
+  if (!f) return;
+  state.filters[f] = e.target.checked; store.set('filters', state.filters); render();
+});
+$('title-btn').addEventListener('click', async () => {
+  if (['mine', 'admin', 'schedule'].includes(state.view)) return;
+  const open = $('mini').hidden;
+  $('mini').hidden = !open; $('title-btn').setAttribute('aria-expanded', String(open));
+  state.miniMonth = state.cursor.slice(0, 8) + '01';
+  renderMini();
+  if (open) { try { await loadMonth(state.miniMonth.slice(0, 7)); renderMini(); } catch (e) { /* 点の表示だけ */ } }
+});
+$('mini').addEventListener('click', async e => {
+  const nav = e.target.closest('[data-mini]'), pick = e.target.closest('[data-pick]');
+  if (nav) {
+    state.miniMonth = addMonths(state.miniMonth, Number(nav.dataset.mini)); renderMini();
+    try { await loadMonth(state.miniMonth.slice(0, 7)); renderMini(); } catch (err) { /* 無視 */ }
+  } else if (pick) {
+    state.cursor = pick.dataset.pick;
+    $('mini').hidden = true; $('title-btn').setAttribute('aria-expanded', 'false');
+    refresh();
+  }
+});
+
+/* ===== メイン描画 ===== */
+function render() {
+  renderBar(); renderMini();
+  const v = state.view;
+  if (v === 'month') renderMonth();
+  else if (v === 'schedule') renderSchedule();
+  else if (v === 'mine') renderMine();
+  else if (v === 'admin') renderAdmin();
+  else renderGrid();
+}
+
+function gridDays() {
+  const c = state.cursor;
+  if (state.view === 'day') return [c];
+  if (state.view === '3day') return [c, addDays(c, 1), addDays(c, 2)];
+  const s = addDays(c, -wd(c));
+  return Array.from({ length: 7 }, (_, i) => addDays(s, i));
+}
+
+function renderGrid() {
+  if (!C()) { $('main').innerHTML = '<div class="empty">読み込み中…</div>'; return; }
+  const days = gridDays(), n = days.length, o = openMin(), c = closeMin();
+  const H = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hour')) || 48;
+  const px = m => (m - o) / 60 * H;
+  const head = days.map(d => `<button class="dh ${n === 1 ? 'one' : ''} ${d === state.today ? 'today' : ''} ${wd(d) === 0 ? 'sun' : ''}" data-goto="${d}">
+    <span class="dw">${WD[wd(d)]}</span><span class="dn num">${parseD(d).getDate()}</span></button>`).join('');
+  let times = '';
+  for (let t = o + 60; t < c; t += 60) times += `<span style="top:${px(t)}px">${jpHour(t)}</span>`;
+
+  const nowD = new Date(), nowM = nowD.getHours() * 60 + nowD.getMinutes();
+  const cols = days.map(d => {
+    const evs = shownOn(d).map(x => {
+      const top = px(toMin(x.start)), h = px(toMin(x.end)) - top;
+      const tight = h < 34;
+      return `<button class="ev ${x.status === 'pending' ? 'pending' : ''} ${tight ? 'tight' : ''}" style="--c:${colorOf(x)};top:${top}px;height:${h}px" data-ev="${esc(x.id)}" data-date="${d}">
+        <b>${esc(x.orgName)}${x.status === 'pending' ? '（承認待ち）' : ''}</b><small class="num">${x.start}～${x.end}</small>${!tight && x.purpose && h > 54 ? `<small>${esc(x.purpose)}</small>` : ''}</button>`;
+    }).join('');
+    const dr = state.draft && state.draft.date === d ? state.draft : null;
+    const draft = dr ? `<div class="draft" id="draft" style="top:${px(dr.s)}px;height:${px(dr.e) - px(dr.s)}px">
+        <b>${esc($('f-org')?.value || '') || '新しい予約'}</b><span class="num" id="draft-time">${fmtMin(dr.s)}～${fmtMin(dr.e)}</span>
+        <span class="handle top" data-h="top" aria-label="開始時刻を変更"></span><span class="handle bot" data-h="bot" aria-label="終了時刻を変更"></span></div>` : '';
+    const now = d === state.today && nowM >= o && nowM <= c ? `<div class="nowline" style="top:${px(nowM)}px"></div>` : '';
+    const watch = n === 1 ? `<span class="watch" style="top:0">CAFE</span>${18 * 60 > o && 18 * 60 < c ? `<span class="watch" style="top:${px(18 * 60)}px">BAR</span>` : ''}` : '';
+    return `<div class="col ${isBookable(d) ? '' : 'closed'}" data-date="${d}">${watch}${evs}${draft}${now}</div>`;
+  }).join('');
+
+  const prevScroll = $('tg-body')?.scrollTop;
+  $('main').innerHTML = `
+    <div class="tg-head" style="--n:${n}"><div class="tz">GMT+09</div>${head}</div>
+    <div class="tg-body" id="tg-body">
+      <div class="tg-inner ${n === 7 ? 'many' : ''}">
+        <div class="times" style="height:${px(c)}px">${times}</div>
+        <div class="cols" style="--n:${n};height:${px(c)}px">${cols}</div>
+      </div>
+    </div>`;
+  const body = $('tg-body');
+  if (prevScroll != null) body.scrollTop = prevScroll;
+  else if (days.includes(state.today) && nowM > o) body.scrollTop = Math.max(0, px(nowM) - 2 * H);
+}
+
+function renderMonth() {
+  if (!C()) { $('main').innerHTML = '<div class="empty">読み込み中…</div>'; return; }
+  const f = state.cursor.slice(0, 8) + '01', s = addDays(f, -wd(f));
+  const lastDay = addDays(addMonths(f, 1), -1);
+  const rows = Math.ceil((wd(f) + parseD(lastDay).getDate()) / 7);
+  let h = `<div class="mv" id="mv" style="--rows:${rows}"><div class="mv-w">${WD.split('').map(w => `<span>${w}</span>`).join('')}</div>`;
+  for (let r = 0; r < rows; r++) {
+    h += '<div class="mv-row">';
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(s, r * 7 + i), list = shownOn(d), max = 3;
+      const chips = list.slice(0, list.length > max ? max - 1 : max).map(x =>
+        `<span class="chip ${x.status === 'pending' ? 'pending' : ''}" style="--c:${colorOf(x)}"><span class="ct num">${x.start}</span>${esc(x.orgName)}</span>`).join('');
+      const more = list.length > max ? `<span class="more">他${list.length - max + 1}件</span>` : '';
+      h += `<button class="mc ${d.slice(0, 7) !== f.slice(0, 7) ? 'out' : ''} ${d === state.today ? 'today' : ''} ${isBookable(d) ? '' : 'closed'}" data-goto="${d}" aria-label="${dateLabel(d)}、予定${list.length}件">
+        <span class="dn num">${parseD(d).getDate()}</span>${chips}${more}</button>`;
+    }
+    h += '</div>';
+  }
+  $('main').innerHTML = h + '</div>';
+}
+
+function cardHtml(x, extra = '') {
+  return `<button class="card ${x.status}" style="--c:${colorOf(x)}" data-ev="${esc(x.id)}" data-date="${x.date}">
+    <b>${esc(x.orgName)}</b><small class="num">${x.start}～${x.end}${x.purpose ? '・' + esc(x.purpose) : ''}</small>
+    ${x.status !== 'approved' && x.status !== 'blocked' ? `<span class="st">${STATUS[x.status]}</span>` : ''}${extra}</button>`;
+}
+function dateRow(d, inner) {
+  return `<div class="drow"><div class="dlab ${d === state.today ? 'today' : ''}"><span class="dw">${WD[wd(d)]}</span><span class="dn num">${parseD(d).getDate()}</span></div>
+    <div class="devs">${inner}</div></div>`;
+}
+
+function renderSchedule() {
+  if (!C()) { $('main').innerHTML = '<div class="empty">読み込み中…</div>'; return; }
+  let h = '', lastMon = '';
+  for (let d = state.today; d <= lastBookable(); d = addDays(d, 1)) {
+    const list = shownOn(d);
+    if (!list.length && d !== state.today) continue;
+    const mon = d.slice(0, 7);
+    if (mon !== lastMon) { const p = parseD(d); h += `<div class="mon">${p.getFullYear()}年${p.getMonth() + 1}月</div>`; lastMon = mon; }
+    h += dateRow(d, list.length ? list.map(x => cardHtml(x)).join('') : '<div class="empty-day">今日の予定はありません</div>');
+  }
+  $('main').innerHTML = `<div class="list" id="list">${h}</div>`;
+}
+
+async function renderMine() {
+  $('main').innerHTML = '<div class="list"><div class="empty">読み込み中…</div></div>';
+  let rows;
+  try { rows = await api('mine'); } catch (e) { showError(e); return; }
+  if (state.view !== 'mine') return;
+  state.mineRows = rows;
+  const up = rows.filter(r => r.date >= state.today), past = rows.filter(r => r.date < state.today).reverse();
+  const group = list => {
+    const by = {};
+    list.forEach(r => (by[r.date] = by[r.date] || []).push(r));
+    return Object.keys(by).map(d => dateRow(d, by[d].map(r => cardHtml({ ...r, mine: true },
+      r.rejectReason ? `<small>理由：${esc(r.rejectReason)}</small>` : '')).join(''))).join('');
+  };
+  $('main').innerHTML = `<div class="list">
+    <div class="ptitle">これからの予約</div>
+    ${up.length ? group(up) : '<div class="empty">予約はまだありません。<br>右下の＋か、カレンダーの空いている時間をタップして申し込めます。</div>'}
+    ${past.length ? `<div class="ptitle" style="margin-top:12px">過去30日</div>${group(past)}` : ''}</div>`;
+}
+
+async function renderAdmin() {
+  $('main').innerHTML = '<div class="list"><div class="empty">読み込み中…</div></div>';
+  let d;
+  try { d = await api('adminList'); } catch (e) { showError(e); return; }
+  if (state.view !== 'admin') return;
+  state.pendingCount = d.pending.length;
+  state.adminRows = [...d.pending, ...d.approved];
+  const row = r => dateRow(r.date, cardHtml(r, `<small>${esc(r.people)}名・${esc(r.lineName)}</small>`));
+  $('main').innerHTML = `<div class="list">
+    <div class="ptitle">承認待ち（${d.pending.length}件）</div>
+    <div class="psub">タップして内容を確認し、承認またはお断りします。結果は申込者にLINEで届きます。</div>
+    ${d.pending.length ? d.pending.map(row).join('') : '<div class="empty">承認待ちの申し込みはありません</div>'}
+    <div class="ptitle" style="margin-top:12px">今後の確定予約（${d.approved.length}件）</div>
+    ${d.approved.length ? d.approved.map(row).join('') : '<div class="empty">確定済みの予約はありません</div>'}</div>`;
+}
+
+/* ===== メイン領域の操作 ===== */
+$('main').addEventListener('click', e => {
+  if (dragging) return;
+  const ev = e.target.closest('[data-ev]');
+  if (ev) return openDetail(ev.dataset.ev, ev.dataset.date);
+  const go = e.target.closest('[data-goto]');
+  if (go) { state.cursor = go.dataset.goto; setView('day'); return; }
+  const col = e.target.closest('.col');
+  if (col && !e.target.closest('.draft')) {
+    const d = col.dataset.date;
+    const H = col.parentElement.offsetHeight / ((closeMin() - openMin()) / 60);
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const m = openMin() + Math.floor(y / (H / 2)) * SLOT();
+    tapSlot(d, m);
+  }
+});
+
+function tapSlot(d, m) {
+  if (!isBookable(d)) return snack(notBookableMsg(d));
+  if (!rangeFree(d, m, m + SLOT())) return;
+  const e = Math.min(m + 60, nextBusy(d, m), closeMin());
+  state.draft = { date: d, s: m, e: Math.max(e, m + SLOT()) };
+  openPeek();
+}
+
+/* ドラフトの上下つまみで長さを変える */
+let dragging = null;
+$('main').addEventListener('pointerdown', e => {
+  const h = e.target.closest('.handle');
+  if (!h || !state.draft) return;
+  e.preventDefault();
+  const col = h.closest('.col');
+  dragging = { which: h.dataset.h, col, rect: col.getBoundingClientRect() };
+  h.setPointerCapture(e.pointerId);
+});
+$('main').addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const { which, rect, col } = dragging, d = state.draft, slot = SLOT(), max = C().maxSlots * slot;
+  const H = col.parentElement.offsetHeight / ((closeMin() - openMin()) / 60);
+  const m = openMin() + Math.round((e.clientY - rect.top) / (H / 2)) * slot;
+  if (which === 'bot') d.e = Math.max(d.s + slot, Math.min(m, nextBusy(d.date, d.s + slot), d.s + max));
+  else d.s = Math.min(d.e - slot, Math.max(m, prevBusy(d.date, d.e - slot), d.e - max));
+  const px = v => (v - openMin()) / 60 * H;
+  const el = $('draft');
+  el.style.top = px(d.s) + 'px'; el.style.height = (px(d.e) - px(d.s)) + 'px';
+  $('draft-time').textContent = `${fmtMin(d.s)}～${fmtMin(d.e)}`;
+  updateSheetTime();
+});
+const endDrag = () => { if (dragging) { setTimeout(() => { dragging = null; }, 0); updateSheetTime(); } };
+$('main').addEventListener('pointerup', endDrag);
+$('main').addEventListener('pointercancel', endDrag);
+
+/* 左右スワイプで前後へ */
+let touch0 = null;
+$('main').addEventListener('touchstart', e => { if (!e.target.closest('.handle')) touch0 = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+$('main').addEventListener('touchend', e => {
+  if (!touch0 || dragging) return;
+  const dx = e.changedTouches[0].clientX - touch0.x, dy = e.changedTouches[0].clientY - touch0.y;
+  touch0 = null;
+  if (Math.abs(dx) > 60 && Math.abs(dy) < 50 && ['day', '3day', 'week', 'month'].includes(state.view)) shift(dx < 0 ? 1 : -1);
+});
+function shift(dir) {
+  const v = state.view;
+  state.cursor = v === 'month' ? addMonths(state.cursor, dir) : addDays(state.cursor, dir * (v === 'day' ? 1 : v === '3day' ? 3 : 7));
+  refresh();
+}
+
+/* ===== 下から出るシート ===== */
+function closeSheet() {
+  state.sheet = null; state.draft = null;
+  $('sheet').hidden = true; $('sheet').className = 'sheet'; $('scrim').hidden = true;
+  render();
+}
+
+function openPeek() {
+  state.sheet = 'peek';
+  const s = $('sheet');
+  s.className = 'sheet peek'; s.hidden = false; $('scrim').hidden = true;
+  s.innerHTML = `<div class="grab"></div>
+    <div class="shbar"><button class="ibtn" id="sh-close" aria-label="閉じる">${icon('close')}</button>
+      <button class="save" id="sh-next">申し込む</button></div>
+    <input class="titlein" id="f-org" maxlength="40" placeholder="団体名を追加" autocomplete="organization" style="padding-left:24px">
+    <div class="srow">${icon('clock')}<div class="body"><span id="sh-time"></span><span class="hint">カレンダー上の青い枠の ● をドラッグすると時間を変えられます</span></div></div>
+    <div class="shact"><button class="tbtn" id="sh-more">その他のオプション</button></div>`;
+  const saved = store.get('profile', {});
+  if (saved.org) $('f-org').value = saved.org;
+  updateSheetTime();
+  render();
+  $('sh-close').onclick = closeSheet;
+  $('sh-more').onclick = () => openEditor();
+  $('sh-next').onclick = () => openEditor(true);
+  $('f-org').oninput = () => { const b = $('draft')?.querySelector('b'); if (b) b.textContent = $('f-org').value || '新しい予約'; };
+}
+
+function timeOptions(d, which) {
+  const o = openMin(), c = closeMin(), slot = SLOT(), dr = state.draft;
+  const opts = [];
+  if (which === 's') for (let m = o; m < c; m += slot) opts.push(m);
+  else for (let m = dr.s + slot; m <= Math.min(c, dr.s + C().maxSlots * slot); m += slot) opts.push(m);
+  const cur = which === 's' ? dr.s : dr.e;
+  return opts.map(m => `<option value="${m}" ${m === cur ? 'selected' : ''}>${fmtMin(m)}</option>`).join('');
+}
+
+function openEditor(submitIntent) {
+  const keep = { org: $('f-org')?.value };
+  state.sheet = 'edit';
+  const s = $('sheet');
+  s.className = 'sheet full'; s.hidden = false; $('scrim').hidden = true;
+  const d = state.draft.date;
+  s.innerHTML = `<form id="form" novalidate>
+    <div class="shbar"><button type="button" class="ibtn" id="sh-close" aria-label="閉じる">${icon('close')}</button>
+      <button type="submit" class="save" id="sh-save">申し込む</button></div>
+    <input class="titlein" id="f-org" maxlength="40" placeholder="団体名を追加" autocomplete="organization">
+    <div class="srow">${icon('clock')}<div class="body">
+      <div class="timepick"><span>${dateLabel(d)}</span>
+        <select id="f-start" aria-label="開始時刻">${timeOptions(d, 's')}</select><span>～</span>
+        <select id="f-end" aria-label="終了時刻">${timeOptions(d, 'e')}</select></div>
+      <span class="hint" id="sh-dur"></span></div></div>
+    <div class="hr"></div>
+    <div class="srow" id="r-purpose">${icon('notes')}<div class="body"><input id="f-purpose" maxlength="60" placeholder="利用目的を追加"></div></div>
+    <div class="srow" id="r-people">${icon('people')}<div class="body"><input id="f-people" type="number" inputmode="numeric" min="1" max="200" placeholder="人数を追加"></div></div>
+    <div class="hr"></div>
+    <div class="srow">${icon('eye')}<div class="body"><span>団体名と利用目的はカレンダーで公開されます</span><span class="hint">友だち登録している人なら誰でも見られます</span></div></div>
+    <div class="hr"></div>
+    <div class="srow">${icon('phone')}<div class="body"><input id="f-contact" maxlength="60" placeholder="連絡先（電話番号またはメール）" autocomplete="tel"></div></div>
+    <div class="srow">${icon('lock')}<div class="body"><textarea id="f-note" maxlength="300" placeholder="備考（プロジェクター使用、飲食の持ち込みなど）"></textarea><span class="hint">連絡先と備考はスタッフだけが見られます</span></div></div>
+    <div class="hr"></div>
+    <div class="srow">${icon('info')}<div class="body"><span>申し込み後、スタッフが承認すると確定します</span><span class="hint">結果はLINEでお知らせします。それまでは枠線だけの「承認待ち」で表示されます。</span></div></div>
+  </form>`;
+  const saved = store.get('profile', {});
+  $('f-org').value = keep.org ?? saved.org ?? '';
+  if (saved.contact) $('f-contact').value = saved.contact;
+  updateSheetTime();
+  renderBar();
+  $('sh-close').onclick = closeSheet;
+  $('f-start').onchange = () => {
+    const dr = state.draft, s2 = Number($('f-start').value), len = dr.e - dr.s;
+    if (!rangeFree(dr.date, s2, s2 + SLOT())) { snack('その時間はほかの予約が入っています'); $('f-start').value = dr.s; return; }
+    dr.s = s2; dr.e = Math.max(s2 + SLOT(), Math.min(s2 + len, nextBusy(dr.date, s2 + SLOT()), closeMin()));
+    $('f-end').innerHTML = timeOptions(dr.date, 'e'); updateSheetTime();
+  };
+  $('f-end').onchange = () => {
+    const dr = state.draft, e2 = Number($('f-end').value);
+    if (!rangeFree(dr.date, dr.s, e2)) { snack('間にほかの予約があります。終了時刻を早めてください'); $('f-end').value = dr.e; return; }
+    dr.e = e2; updateSheetTime();
+  };
+  $('form').onsubmit = submitForm;
+  if (submitIntent && $('f-org').value) setTimeout(() => $('f-purpose').focus(), 60);
+  else setTimeout(() => $('f-org').focus(), 60);
+}
+
+function updateSheetTime() {
+  const dr = state.draft;
+  if (!dr) return;
+  if ($('sh-time')) $('sh-time').textContent = `${dateLabel(dr.date)} ・ ${fmtMin(dr.s)}～${fmtMin(dr.e)}（${durLabel(dr.e - dr.s)}）`;
+  if ($('sh-dur')) $('sh-dur').textContent = durLabel(dr.e - dr.s) + `・最大${C().maxSlots * SLOT() / 60}時間`;
+  if ($('f-start') && !dragging) { $('f-start').value = dr.s; $('f-end').innerHTML = timeOptions(dr.date, 'e'); }
+}
+
+async function submitForm(e) {
+  e.preventDefault();
+  const v = {
+    orgName: $('f-org').value.trim(), purpose: $('f-purpose').value.trim(),
+    people: $('f-people').value, contact: $('f-contact').value.trim(), note: $('f-note').value.trim(),
+  };
+  document.querySelectorAll('.srow.err').forEach(r => r.classList.remove('err'));
+  if (!v.orgName) { snack('団体名を入力してください'); return $('f-org').focus(); }
+  if (!v.purpose) { $('r-purpose').classList.add('err'); snack('利用目的を入力してください'); return $('f-purpose').focus(); }
+  const p = parseInt(v.people, 10);
+  if (!(p >= 1 && p <= 200)) { $('r-people').classList.add('err'); snack('人数は1〜200で入力してください'); return $('f-people').focus(); }
+  const dr = { ...state.draft };
+  const btn = $('sh-save');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    await api('create', { date: dr.date, start: fmtMin(dr.s), end: fmtMin(dr.e), ...v });
+    store.set('profile', { org: v.orgName, contact: v.contact });
+    await loadMonth(dr.date.slice(0, 7), true);
+    closeSheet();
+    snack('申し込みました。スタッフが承認するとLINEでお知らせします', 5000);
+    refreshPendingCount();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = '申し込む';
+    if (err.code === 'conflict') { await loadMonth(dr.date.slice(0, 7), true); closeSheet(); }
+    showError(err);
+  }
+}
+
+function findItem(id, date) {
+  const pools = [state.items[(date || '').slice(0, 7)] || [], state.mineRows || [], state.adminRows || []];
+  for (const p of pools) { const x = p.find(i => i.id === id); if (x) return { ...x, mine: x.mine ?? state.view === 'mine' }; }
+  return null;
+}
+
+function openDetail(id, date) {
+  const x = findItem(id, date);
+  if (!x) return;
+  state.sheet = 'detail'; state.draft = null;
+  const s = $('sheet');
+  s.className = 'sheet'; s.hidden = false; $('scrim').hidden = false;
+  const future = x.date >= state.today;
+  const isAdmin = state.me?.isAdmin;
+  const acts = [];
+  if (isAdmin && x.status === 'pending') acts.push(`<button class="tbtn danger" data-act="reject">お断りする</button><button class="tbtn fill" data-act="approve">承認する</button>`);
+  else if (['pending', 'approved'].includes(x.status) && future && (x.mine || isAdmin)) acts.push(`<button class="tbtn danger" data-act="cancel">${x.mine ? '予約をキャンセル' : '店舗都合でキャンセル'}</button>`);
+  const statusNote = { pending: 'スタッフの承認待ちです。承認されると確定します。', approved: '予約は確定しています。', blocked: 'この時間はお店の都合で予約できません。', rejected: 'この申し込みはお断りしました。', cancelled: 'キャンセル済みです。' }[x.status];
+  s.innerHTML = `<div class="grab"></div>
+    <div class="shbar"><button class="ibtn" id="sh-close" aria-label="閉じる">${icon('close')}</button></div>
+    <div class="srow"><span class="dot ${x.status === 'pending' ? 'pending' : ''}" style="--c:${colorOf(x)}"></span><div class="body">
+      <div class="dtitle">${esc(x.orgName)}</div>
+      <div class="dsub num">${dateLabel(x.date)} ・ ${x.start}～${x.end}</div>
+      <span class="stchip ${x.status}">${STATUS[x.status]}${x.mine ? '・自分の予約' : ''}</span></div></div>
+    ${x.purpose ? `<div class="srow">${icon('notes')}<div class="body">${esc(x.purpose)}</div></div>` : ''}
+    ${x.people ? `<div class="srow">${icon('people')}<div class="body">${esc(x.people)}名</div></div>` : ''}
+    ${x.contact && (isAdmin || x.mine) ? `<div class="srow">${icon('phone')}<div class="body">${esc(x.contact)}</div></div>` : ''}
+    ${x.lineName && isAdmin ? `<div class="srow">${icon('person')}<div class="body">LINE名：${esc(x.lineName)}</div></div>` : ''}
+    ${x.note && (isAdmin || x.mine) ? `<div class="srow">${icon('lock')}<div class="body">${esc(x.note)}</div></div>` : ''}
+    ${x.rejectReason ? `<div class="srow">${icon('info')}<div class="body">理由：${esc(x.rejectReason)}</div></div>` : ''}
+    <div class="srow">${icon('info')}<div class="body"><span class="hint" style="font-size:13px">${statusNote}</span></div></div>
+    ${acts.length ? `<div class="shact">${acts.join('')}</div>` : ''}`;
+  $('sh-close').onclick = closeSheet;
+  s.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, x));
+  renderBar();
+}
+
+async function act(kind, x) {
+  try {
+    if (kind === 'approve') {
+      await api('decide', { id: x.id, decision: 'approve' });
+      snack('承認しました。申込者にLINEで通知しました');
+    } else if (kind === 'reject') {
+      const reason = await dialog({ title: 'お断りしますか？', body: '申込者にLINEで通知します。', input: 'お断りの理由（申込者に届きます・任意）', ok: 'お断りする' });
+      if (reason === null) return;
+      await api('decide', { id: x.id, decision: 'reject', reason });
+      snack('お断りしました。申込者にLINEで通知しました');
+    } else if (kind === 'cancel') {
+      const ok = await dialog({ title: 'この予約をキャンセルしますか？', body: x.mine ? 'その時間はほかの人が予約できるようになります。' : '申込者にLINEで通知します。事前に連絡を取ってから行ってください。', ok: 'キャンセルする' });
+      if (ok === null) return;
+      await api('cancel', { id: x.id });
+      snack('予約をキャンセルしました');
+    }
+    state.items = {};
+    closeSheet();
+    await refresh();
+    refreshPendingCount();
+  } catch (err) { showError(err); }
+}
+
+$('scrim').addEventListener('click', () => { if (!$('drawer').hidden) closeDrawer(); else closeSheet(); });
+
+/* ===== FAB / 作成ボタン ===== */
+$('fab').addEventListener('click', () => createQuick());
+function createQuick() {
+  if (!C()) return;
+  let d = state.view === 'day' || state.view === '3day' || state.view === 'week' ? gridDays().find(isBookable) : null;
+  d = d || firstBookable();
+  for (let i = 0; i <= C().maxAheadDays; i++, d = addDays(d, 1)) {
+    if (!isBookable(d)) continue;
+    for (let m = openMin(); m + SLOT() <= closeMin(); m += SLOT()) {
+      if (rangeFree(d, m, m + SLOT())) {
+        state.draft = { date: d, s: m, e: Math.max(m + SLOT(), Math.min(m + 60, nextBusy(d, m))) };
+        if (!gridDays().includes(d) || !['day', '3day', 'week'].includes(state.view)) { state.cursor = d; if (!['day', '3day', 'week'].includes(state.view)) state.view = 'day'; }
+        render(); openEditor();
+        return;
+      }
+    }
+  }
+  snack('予約できる空き時間が見つかりませんでした');
+}
+
+/* ===== ドロワー ===== */
+function renderDrawer() {
+  const d = $('drawer');
+  const item = (v, label, ic, badge) => `<button class="ditem" data-view="${v}" aria-current="${state.view === v}">${icon(ic)}<span>${label}</span>${badge ? `<span class="badge num">${badge}</span>` : ''}</button>`;
+  const cb = (k, label, color) => `<label class="cbx" style="--c:${color}"><input type="checkbox" data-filter="${k}" ${state.filters[k] !== false ? 'checked' : ''}>${label}</label>`;
+  d.innerHTML = `<div class="dr-title"><b>Ship</b><span>スペース予約</span></div>
+    ${Object.entries(VIEWS).map(([v, [l, ic]]) => item(v, l, ic)).join('')}
+    <div class="dsep"></div>
+    ${item('mine', 'マイ予約', 'mine')}
+    ${state.me?.isAdmin ? item('admin', '承認（スタッフ）', 'approve', state.pendingCount) : ''}
+    <div class="dsep"></div>
+    <div class="dlabel">表示する予定</div>
+    ${cb('approved', '確定', 'var(--ev-approved)')}
+    ${cb('pending', '承認待ち', 'var(--ev-approved)')}
+    ${cb('blocked', '予約不可（お店の予定）', 'var(--ev-blocked)')}
+    <div class="dhelp">緑色は自分の予約、枠線だけの予定は承認待ちです。<br>空いている時間をタップすると申し込めます（30分単位・${C() ? C().maxSlots * SLOT() / 60 : 8}時間まで）。</div>`;
+}
+function openDrawer() { renderDrawer(); $('drawer').hidden = false; $('scrim').hidden = false; }
+function closeDrawer() { $('drawer').hidden = true; $('scrim').hidden = state.sheet !== 'detail'; }
+$('drawer').addEventListener('click', e => {
+  const v = e.target.closest('[data-view]');
+  if (v) { closeDrawer(); setView(v.dataset.view); }
+});
+$('drawer').addEventListener('change', e => {
+  const f = e.target.dataset.filter;
+  if (!f) return;
+  state.filters[f] = e.target.checked; store.set('filters', state.filters); render();
+});
+$('menu-btn').innerHTML = icon('menu');
+$('menu-btn').addEventListener('click', () => {
+  if (isDesktop()) { document.querySelector('.app').classList.toggle('collapsed'); store.set('collapsed', document.querySelector('.app').classList.contains('collapsed')); }
+  else openDrawer();
+});
+if (store.get('collapsed', false)) document.querySelector('.app').classList.add('collapsed');
+$('nav-prev').innerHTML = icon('left');
+$('nav-next').innerHTML = icon('right');
+$('nav-prev').addEventListener('click', () => shift(-1));
+$('nav-next').addEventListener('click', () => shift(1));
+$('today-pill').addEventListener('click', () => $('today-btn').click());
+$('view-select').addEventListener('change', e => { if (e.target.value) setView(e.target.value); });
+desktopMQ.addEventListener('change', () => { if (!$('drawer').hidden) closeDrawer(); render(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('dlg').hidden) return;
+  if (!$('drawer').hidden) closeDrawer();
+  else if (state.sheet) closeSheet();
+});
+$('fab').innerHTML = icon('add');
+
+$('today-btn').addEventListener('click', () => {
+  if (['mine', 'admin'].includes(state.view)) setView(store.get('view', 'week'));
+  state.cursor = state.today; refresh();
+  setTimeout(() => { const b = $('tg-body'); if (b) { const n = new Date(); const H = 48; b.scrollTop = Math.max(0, ((n.getHours() * 60 + n.getMinutes()) - openMin()) / 60 * H - 2 * H); } }, 0);
+});
+
+function setView(v) {
+  if (v === 'admin' && !state.me?.isAdmin) v = 'day';
+  if (state.sheet) { state.sheet = null; state.draft = null; $('sheet').hidden = true; $('scrim').hidden = true; }
+  state.view = v;
+  if (VIEWS[v]) store.set('view', v);
+  $('mini').hidden = true; $('title-btn').setAttribute('aria-expanded', 'false');
+  refresh();
+}
+
+/* ===== ダイアログ・スナックバー・バナー ===== */
+function dialog({ title, body = '', input = '', ok = 'OK', cancel = 'キャンセル' }) {
+  return new Promise(resolve => {
+    const w = $('dlg');
+    w.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t"><h3 id="dlg-t">${esc(title)}</h3><p>${esc(body)}</p>
+      ${input ? `<textarea id="dlg-in" maxlength="200" placeholder="${esc(input)}" aria-label="${esc(input)}"></textarea>` : ''}
+      <div class="shact"><button class="tbtn" id="dlg-c">${esc(cancel === 'キャンセル' && ok.includes('キャンセル') ? '戻る' : cancel)}</button><button class="tbtn" id="dlg-o">${esc(ok)}</button></div></div>`;
+    w.hidden = false;
+    const done = val => { w.hidden = true; w.innerHTML = ''; resolve(val); };
+    $('dlg-o').onclick = () => done($('dlg-in') ? $('dlg-in').value.trim() : '');
+    $('dlg-c').onclick = () => done(null);
+  });
+}
+let snackTimer;
+function snack(msg, ms = 3200) {
+  const s = $('snack');
+  s.textContent = msg; s.hidden = false;
+  clearTimeout(snackTimer); snackTimer = setTimeout(() => { s.hidden = true; }, ms);
+}
+function showBanner(html, kind) {
+  const b = $('banner');
+  b.innerHTML = html; b.className = 'demo' + (kind === 'error' ? ' error' : ''); b.hidden = false;
+}
+function showError(e) {
+  console.error(e);
+  if (e.code === 'not_friend') showBanner(`Shipの公式LINEを友だち追加すると予約できます。${APP.FRIEND_URL ? ` <a href="${esc(APP.FRIEND_URL)}">友だち追加する</a>` : ''}`, 'error');
+  else if (e.code === 'token_invalid') showBanner(esc(e.message), 'error');
+  else snack(e.message || 'エラーが起きました。もう一度お試しください');
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.config && !state.sheet) refresh(true);
+});
+
+/* ===== 起動 ===== */
+async function boot() {
+  state.cursor = state.today;
+  try {
+    if (!DEMO) {
+      await loadScript('https://static.line-scdn.net/liff/edge/2/sdk.js');
+      await liff.init({ liffId: APP.LIFF_ID });
+      if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    } else {
+      showBanner('デモ表示：予約はすべて架空のもので、操作してもどこにも送信されません。メニューからスタッフ用の「承認」も試せます。');
+    }
+    await loadMonth(state.today.slice(0, 7));
+    state.cursor = state.today;
+    const v = new URLSearchParams(location.search).get('view') || (location.hash || '').slice(1);
+    if (['mine', 'admin', ...Object.keys(VIEWS)].includes(v)) state.view = v;
+    await refresh();
+    refreshPendingCount();
+  } catch (e) {
+    showError(e); render();
+  }
+}
+
+/* ===== デモ用の仮サーバー（APP の設定が空のときだけ使う） ===== */
+const demo = (() => {
+  const today = ymd(new Date());
+  const ME = 'U-demo-me';
+  let seq = 100;
+  const R = (off, start, end, status, orgName, purpose, extra = {}) => ({
+    id: 'd' + (seq++), date: addDays(today, off), start, end, status, orgName, purpose,
+    userId: 'U-other', people: '12', contact: '090-0000-0000', note: '', lineName: 'サンプル利用者', rejectReason: '', ...extra,
+  });
+  const rows = [
+    R(-2, '14:00', '16:00', 'approved', '就活サークル Compass', 'ES添削会'),
+    R(0, '11:00', '12:30', 'approved', 'キャリア支援室', '個別相談会', { people: '4' }),
+    R(0, '19:00', '21:00', 'approved', '学生団体 Sail', '新歓打ち合わせ', { people: '10' }),
+    R(1, '13:00', '15:00', 'approved', '写真サークル Lens', '作品講評会', { people: '8' }),
+    R(1, '18:30', '21:00', 'pending', '起業ゼミ', '交流会', { people: '25', note: 'BARメニュー利用予定', lineName: 'ゼミ代表' }),
+    R(2, '10:00', '12:00', 'blocked', '定期清掃', ''),
+    R(2, '16:00', '17:00', 'approved', '英会話サークル', 'もくもく会', { people: '5' }),
+    R(3, '15:00', '17:30', 'approved', '地域おこし協力隊', 'ワークショップ打合せ', { people: '6' }),
+    R(3, '19:00', '22:00', 'approved', 'TRYDENT', '社内勉強会', { userId: ME, people: '10' }),
+    R(4, '13:00', '15:00', 'rejected', 'TRYDENT', '撮影', { userId: ME, rejectReason: '同じ時間帯に店舗イベントがあるため' }),
+    R(5, '10:00', '24:00', 'blocked', '臨時休業', ''),
+    R(6, '11:00', '13:00', 'pending', 'TRYDENT', '採用面談', { userId: ME, people: '3' }),
+    R(8, '18:00', '20:00', 'approved', '学生団体 Sail', '定例ミーティング', { people: '15' }),
+    R(10, '10:00', '13:00', 'approved', 'ロボット研究会', '設計レビュー', { people: '9' }),
+    R(12, '17:00', '19:30', 'pending', '留学生会', 'ランゲージエクスチェンジ', { people: '20', contact: 'intl@example.jp', lineName: '留学生会 運営' }),
+    R(15, '13:00', '18:00', 'approved', 'キャリア支援室', '企業説明会', { people: '40' }),
+    R(19, '19:00', '23:00', 'approved', '写真サークル Lens', '卒業制作 打ち上げ', { people: '18' }),
+  ];
+  const config = { open: '10:00', close: '24:00', slotMin: 30, maxSlots: 16, minLeadDays: 1, maxAheadDays: 60, closedWeekdays: [] };
+  const pub = r => ({ id: r.id, date: r.date, start: r.start, end: r.end, status: r.status, orgName: r.orgName, purpose: r.purpose, mine: r.userId === ME });
+  const active = r => ['pending', 'approved', 'blocked'].includes(r.status);
+  const find = id => { const r = rows.find(x => x.id === id); if (!r) throw new ApiErr('not_found', '予約が見つかりません'); return r; };
+  const full = r => ({ ...pub(r), people: r.people, contact: r.contact, note: r.note, lineName: r.lineName, rejectReason: r.rejectReason });
+  return {
+    schedule: p => ({ me: { name: 'デモ利用者', isAdmin: true }, today, config, items: rows.filter(r => active(r) && r.date >= p.from && r.date <= p.to).map(pub) }),
+    create: p => {
+      const s = toMin(p.start), e = toMin(p.end);
+      if (rows.some(r => active(r) && r.date === p.date && toMin(r.start) < e && s < toMin(r.end))) throw new ApiErr('conflict', 'その時間はほかの予約が入りました。選び直してください');
+      const r = R(0, p.start, p.end, 'pending', p.orgName, p.purpose, { date: p.date, userId: ME, people: String(p.people), contact: p.contact, note: p.note, lineName: 'デモ利用者' });
+      rows.push(r); return pub(r);
+    },
+    cancel: p => { const r = find(p.id); r.status = 'cancelled'; return { id: r.id, status: r.status }; },
+    mine: () => rows.filter(r => r.userId === ME && r.date >= addDays(today, -30)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).map(full),
+    adminList: () => {
+      const up = rows.filter(r => r.date >= today && ['pending', 'approved'].includes(r.status)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).map(full);
+      return { pending: up.filter(r => r.status === 'pending'), approved: up.filter(r => r.status === 'approved') };
+    },
+    decide: p => {
+      const r = find(p.id);
+      if (r.status !== 'pending') throw new ApiErr('bad_state', 'この予約はすでに処理済みです');
+      r.status = p.decision === 'approve' ? 'approved' : 'rejected';
+      if (p.decision === 'reject') r.rejectReason = p.reason || '';
+      return { id: r.id, status: r.status };
+    },
+  };
+})();
+
+async function demoApi(action, params) {
+  await new Promise(r => setTimeout(r, 200));
+  const fn = demo[action];
+  if (!fn) throw new ApiErr('bad_action', '不明な操作です');
+  return JSON.parse(JSON.stringify(fn(params)));
+}
+
+boot();
+</script>
